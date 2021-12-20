@@ -29,14 +29,14 @@ import { TwillioChannel } from './twillio.message';
 @Injectable()
 export class TwillioClient {
   private readonly env = {
-    twilioAccountSid: Environment.twilio_account_sid
-      ? Environment.twilio_account_sid
+    twilioAccountSid: Environment.TWILIO_ACCOUNT_SID
+      ? Environment.TWILIO_ACCOUNT_SID
       : 'ACd501e',
-    twilioAuthToken: Environment.twilio_auth_token
-      ? Environment.twilio_auth_token
+    twilioAuthToken: Environment.TWILIO_AUTH_TOKEN
+      ? Environment.TWILIO_AUTH_TOKEN
       : 'secrect',
-    twilioOtpSid: Environment.twilio_otp_sid
-      ? Environment.twilio_otp_sid
+    twilioOtpSid: Environment.TWILIO_OTP_SID
+      ? Environment.TWILIO_OTP_SID
       : 'VA356353'
   };
 
@@ -50,10 +50,14 @@ export class TwillioClient {
     this.env.twilioAuthToken
   );
 
-  async requestOtp(receiver: string, channel: TwillioChannel) {
+  async requestOtp(receiver: string, channel: TwillioChannel, config: any) {
+    this.logger.log(`Request otp receiver: ${receiver} channel: ${channel}`);
     return this.client.verify
       .services(this.env.twilioOtpSid)
       .verifications.create({
+        channelConfiguration: {
+          substitutions: config
+        },
         to: receiver,
         channel: channel
       })
@@ -66,9 +70,24 @@ export class TwillioClient {
   }
 
   async verifyOtp(receiver: string, otp: string) {
+    this.logger.log(`Verify otp receiver: ${receiver}`);
     return this.client.verify
       .services(this.env.twilioOtpSid)
       .verificationChecks.create({ to: receiver, code: otp })
+      .then((verification) => {
+        return verification;
+      })
+      .catch((error) => {
+        throw new Error(error);
+      });
+  }
+
+  async canceledOtp(sid: string) {
+    this.logger.log(`Cancel otp sid: ${sid}`);
+    return this.client.verify
+      .services(this.env.twilioOtpSid)
+      .verifications(sid)
+      .update({ status: 'canceled' })
       .then((verification) => {
         return verification;
       })

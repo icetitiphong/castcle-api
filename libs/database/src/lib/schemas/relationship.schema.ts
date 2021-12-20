@@ -23,7 +23,7 @@
 
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import * as mongoose from 'mongoose';
-import { Document, Model } from 'mongoose';
+import { Document } from 'mongoose';
 import { CastcleBase } from './base.schema';
 import { User } from './user.schema';
 
@@ -48,6 +48,12 @@ export class Relationship extends CastcleBase {
   //TODO !!! might need to change to embed followedUser and user instead
   @Prop()
   isFollowPage: boolean;
+
+  @Prop({ default: true })
+  following: boolean;
+
+  @Prop({ default: false })
+  blocking: boolean;
 }
 
 export type RelationshipDocument = Relationship & Document;

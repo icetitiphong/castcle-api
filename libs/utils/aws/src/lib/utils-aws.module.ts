@@ -4,12 +4,13 @@ import { Module } from '@nestjs/common';
 import { Downloader } from './downloader';
 import { Image, ImageUploadOptions } from './image';
 import { Uploader, UploadOptions } from './uploader';
-import { AVARTAR_SIZE_CONFIGS, COMMON_SIZE_CONFIGS } from '../config';
+import { AVATAR_SIZE_CONFIGS, COMMON_SIZE_CONFIGS } from '../config';
+import { predictContents } from './functions/predict-content';
 
 @Module({
   imports: [
     HttpModule.register({
-      timeout: Environment.http_time_out
+      timeout: Environment.HTTP_TIME_OUT
     })
   ],
   controllers: [],
@@ -23,7 +24,8 @@ export {
   Uploader,
   UploadOptions,
   Downloader,
-  AVARTAR_SIZE_CONFIGS,
+  AVATAR_SIZE_CONFIGS,
   COMMON_SIZE_CONFIGS,
-  ImageUploadOptions
+  ImageUploadOptions,
+  predictContents
 };

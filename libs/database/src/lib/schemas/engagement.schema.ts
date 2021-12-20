@@ -25,8 +25,8 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Model } from 'mongoose';
 import * as mongoose from 'mongoose';
 import { User } from './user.schema';
-import { Comment, CommentDocument } from './comment.schema';
-import { Content, ContentDocument } from './content.schema';
+import { CommentDocument } from './comment.schema';
+import { ContentDocument } from './content.schema';
 import { CastcleBase } from './base.schema';
 import { EntityVisibility } from '../dtos/common.dto';
 import { FeedItemDocument } from './feedItem.schema';
@@ -37,7 +37,8 @@ export enum EngagementType {
   Like = 'like',
   Recast = 'recast',
   Quote = 'quote',
-  Comment = 'comment'
+  Comment = 'comment',
+  Report = 'report'
 }
 
 const feedItemKey = {

@@ -49,20 +49,23 @@ export class Image {
 
   toSignUrl(sizeName?: string) {
     //for pass no env test
-    if (!env.cloudfront_private_key) return this.image.original;
-    const buff = Buffer.from(env.cloudfront_private_key, 'base64');
+    if (!env.CLOUDFRONT_PRIVATE_KEY) return this.image.original;
+    const buff = Buffer.from(env.CLOUDFRONT_PRIVATE_KEY, 'base64');
     const cloudFrontPrivateKey = buff.toString('ascii');
     const signer = new AWS.CloudFront.Signer(
-      env.cloudfront_access_key_id
-        ? env.cloudfront_access_key_id
+      env.CLOUDFRONT_ACCESS_KEY_ID
+        ? env.CLOUDFRONT_ACCESS_KEY_ID
         : 'testCloudKey',
       cloudFrontPrivateKey
     );
 
+    const imageUrl = sizeName ? this.image[sizeName] : this.image.original;
+    const url = imageUrl?.includes(env.ASSETS_HOST)
+      ? imageUrl
+      : `${env.ASSETS_HOST}/${imageUrl}`;
+
     return signer.getSignedUrl({
-      url: `${
-        env.assets_host ? env.assets_host : 'https://assets-dev.castcle.com'
-      }/${sizeName ? this.image[sizeName] : this.image.original}`,
+      url,
       expires: Math.floor((Date.now() + Configs.EXPIRE_TIME) / 1000)
     });
   }
@@ -128,9 +131,10 @@ export class Image {
     size = Image._getNewSameRatioSize(metaData.width, metaData.height, size);
     const newBuffer = await sharpImage
       .resize(size.width, size.height)
+      .toFormat(metaData.format, { quality: 70 })
       .toBuffer();
     const uploader = new Uploader(
-      env.assets_bucket_name ? env.assets_bucket_name : 'testBucketName',
+      env.ASSETS_BUCKET_NAME ? env.ASSETS_BUCKET_NAME : 'testBucketName',
       Configs.IMAGE_BUCKET_FOLDER
     );
     return uploader.uploadBufferToS3(newBuffer, fileType, {
@@ -162,7 +166,7 @@ export class Image {
   static async upload(base64: string, options?: ImageUploadOptions) {
     console.debug('original upload()', options);
     const uploader = new Uploader(
-      env.assets_bucket_name ? env.assets_bucket_name : 'testBucketName',
+      env.ASSETS_BUCKET_NAME ? env.ASSETS_BUCKET_NAME : 'testBucketName',
       Configs.IMAGE_BUCKET_FOLDER
     );
     const contentType = Uploader.getImageContentType(base64);

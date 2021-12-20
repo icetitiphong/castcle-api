@@ -116,7 +116,7 @@ export class User extends CastcleBase {
 export const UserSchema = SchemaFactory.createForClass(User);
 
 export interface IUser extends Document {
-  toUserResponse(): Promise<UserResponseDto>;
+  toUserResponse(followed?: boolean): Promise<UserResponseDto>;
   toPageResponse(): PageResponseDto;
   follow(user: UserDocument): Promise<void>;
   unfollow(user: UserDocument): Promise<void>;
@@ -126,11 +126,14 @@ export interface IUser extends Document {
 }
 
 export interface UserModel extends mongoose.Model<UserDocument> {
-  covertToUserResponse(user: User | UserDocument): UserResponseDto;
+  covertToUserResponse(
+    user: User | UserDocument,
+    followed?: boolean
+  ): UserResponseDto;
   toAuthor(user: User | UserDocument): Author;
 }
 
-const _covertToUserResponse = (self: User | UserDocument) => {
+const _covertToUserResponse = (self: User | UserDocument, followed = false) => {
   const selfSocial: any =
     self.profile && self.profile.socials ? { ...self.profile.socials } : {};
   if (self.profile && self.profile.websites && self.profile.websites.length > 0)
@@ -159,12 +162,15 @@ const _covertToUserResponse = (self: User | UserDocument) => {
     overview:
       self.profile && self.profile.overview ? self.profile.overview : null,
     links: selfSocial,
-    verified: self.verified //self.verified ? true : false,
+    verified: self.verified, //self.verified ? true : false,
+    followed: followed
   } as UserResponseDto;
 };
 
-UserSchema.statics.covertToUserResponse = (self: User | UserDocument) =>
-  _covertToUserResponse(self);
+UserSchema.statics.covertToUserResponse = (
+  self: User | UserDocument,
+  followed = false
+) => _covertToUserResponse(self, followed);
 
 UserSchema.statics.toAuthor = (self: User | UserDocument) =>
   ({
@@ -180,19 +186,21 @@ UserSchema.statics.toAuthor = (self: User | UserDocument) =>
     verified: self.verified
   } as Author);
 
-UserSchema.methods.toUserResponse = async function () {
+UserSchema.methods.toUserResponse = async function (followed = false) {
   const self = await (this as UserDocument)
     .populate('ownerAccount')
     .execPopulate();
-  const response = _covertToUserResponse(self);
+  const response = _covertToUserResponse(self, followed);
   response.email = self.ownerAccount.email;
   const selfSocial: any =
     self.profile && self.profile.socials ? { ...self.profile.socials } : {};
+
   return response;
 };
 
 UserSchema.methods.toPageResponse = function () {
   return {
+    id: (this as UserDocument)._id,
     castcleId: (this as UserDocument).displayId,
     displayName: (this as UserDocument).displayName,
     images: {
@@ -253,8 +261,8 @@ UserSchema.methods.toPageResponse = function () {
     verified: {
       official: (this as UserDocument).verified.official
     } as PageVerified,
-    updateAt: (this as UserDocument).updatedAt.toISOString(),
-    createAt: (this as UserDocument).createdAt.toISOString()
+    updatedAt: (this as UserDocument).updatedAt.toISOString(),
+    createdAt: (this as UserDocument).createdAt.toISOString()
   } as PageResponseDto;
 };
 
@@ -375,6 +383,7 @@ export const UserSchemaFactory = (
         user: (this as UserDocument)._id,
         followedUser: followedUser._id,
         isFollowPage: false,
+        blocking: false,
         visibility: EntityVisibility.Publish
       };
       if ((followedUser as UserDocument).type === UserType.Page)
@@ -386,7 +395,8 @@ export const UserSchemaFactory = (
             followedUser: followedUser._id
           },
           {
-            $setOnInsert: setObject
+            $setOnInsert: setObject,
+            $set: { following: true }
           },
           {
             upsert: true
@@ -404,20 +414,38 @@ export const UserSchemaFactory = (
 
   UserSchema.methods.unfollow = async function (followedUser: UserDocument) {
     const session = await relationshipModel.startSession();
+
     await session.withTransaction(async () => {
-      const result = await relationshipModel
-        .deleteOne({
+      const relationship = await relationshipModel
+        .findOne({
           user: this._id,
-          followedUser: followedUser._id
+          followedUser: followedUser._id,
+          following: true
         })
         .exec();
-      if (result.deletedCount === 1) {
-        (this as UserDocument).followedCount--;
-        followedUser.followerCount--;
-        await Promise.all([this.save(), followedUser.save()]);
+
+      if (!relationship) return;
+
+      (this as UserDocument).followedCount--;
+      followedUser.followerCount--;
+
+      const toSaveDocuments: Promise<any>[] = [
+        this.save(),
+        followedUser.save()
+      ];
+
+      if (relationship.blocking) {
+        relationship.following = false;
+        toSaveDocuments.push(relationship.save());
+      } else {
+        toSaveDocuments.push(relationship.delete());
       }
+
+      await Promise.all(toSaveDocuments);
     });
+
     session.endSession();
   };
+
   return UserSchema;
 };

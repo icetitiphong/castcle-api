@@ -41,9 +41,9 @@ type CheckIp = {
 };
 
 const getIPUrl = (ip: string) =>
-  env.ip_api_key
-    ? `${env.ip_api_url}/${ip}?fields=continentCode,countryCode&key=${env.ip_api_key}`
-    : `${env.ip_api_url}/${ip}?fields=continentCode,countryCode`;
+  env.IP_API_KEY
+    ? `${env.IP_API_URL}/${ip}?fields=continentCode,countryCode&key=${env.IP_API_KEY}`
+    : `${env.IP_API_URL}/${ip}?fields=continentCode,countryCode`;
 
 @Injectable()
 export class IpTrackerInterceptor implements NestInterceptor {
@@ -68,9 +68,15 @@ export class IpTrackerInterceptor implements NestInterceptor {
     request.$ip = util.getIpFromRequest(request);
     try {
       request.$geolocation = await lastValueFrom(
-        this.httpService
-          .get<CheckIp>(getIPUrl(request.$ip))
-          .pipe(map(({ data }) => data))
+        this.httpService.get<CheckIp>(getIPUrl(request.$ip)).pipe(
+          map(
+            ({ data }) =>
+              ({
+                continentCode: data.continentCode.toLowerCase(),
+                countryCode: data.countryCode.toLowerCase()
+              } as CheckIp)
+          )
+        )
       );
     } catch (error) {
       console.debug('wrong ip', request.$ip);

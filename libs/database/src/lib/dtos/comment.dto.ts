@@ -22,9 +22,9 @@
  */
 
 import { ApiProperty } from '@nestjs/swagger';
-import { CastcleImage, Pagination } from '.';
 import { CommentType } from '../schemas/comment.schema';
-import { UserVerified } from '../schemas/user.schema';
+import { CastcleMeta, CastcleMetric, CastcleParticipate } from './common.dto';
+import { Author } from './content.dto';
 
 export class CommentDto {
   author: any; //mongooseId
@@ -40,57 +40,51 @@ export class UpdateCommentDto {
   message: string;
 }
 
+class Like {
+  count: number;
+  liked: boolean;
+  participant: {
+    type: 'people' | 'page'; // people or page
+    id: string; //userId
+    castcleId: string; // @castcle
+    displayName: string;
+  }[];
+}
+
 export class CommentPayload {
   @ApiProperty()
   id: string; //commentId
   @ApiProperty()
   message: string;
+
   @ApiProperty()
-  like: {
-    count: number;
-    liked: boolean;
-    participant: {
-      type: 'people' | 'page'; // people or page
-      id: string; //userId
-      castcleId: string; // @castcle
-      displayName: string;
-    }[];
-  };
+  metrics: CastcleMetric;
+
   @ApiProperty()
-  author: {
-    type: 'people' | 'page'; // people or page
-    id: string;
-    castcleId: string; // @castcle
-    displayName: string;
-    avatar: CastcleImage;
-    verified: UserVerified;
-    followed: boolean;
-  };
+  author: Author;
+
+  @ApiProperty()
+  participate: CastcleParticipate;
+
   @ApiProperty()
   reply: {
     id: string;
     message: string;
-    createAt: string;
-    author: {
-      type: 'people' | 'page'; // people or page
-      id: string;
-      castcleId: string; // @castcle
-      displayName: string;
-      avatar: CastcleImage;
-      verified: UserVerified;
-      followed: boolean;
-    };
+    createdAt: string;
+    author: Author;
+    metrics: CastcleMetric;
+    participate: CastcleParticipate;
   }[];
   @ApiProperty()
   hasHistory: boolean;
   @ApiProperty()
-  createAt: string;
+  createdAt: string;
   @ApiProperty()
-  updateAt: string;
+  updatedAt: string;
 }
 
 export class CommentsReponse {
-  message: string;
+  message?: string;
   payload: CommentPayload[];
-  pagination: Pagination;
+  meta: CastcleMeta;
 }

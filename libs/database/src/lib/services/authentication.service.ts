@@ -33,7 +33,7 @@ import {
   RefreshTokenPayload,
   UserAccessTokenPayload
 } from '../dtos/token.dto';
-import { AccountDocument } from '../schemas/account.schema';
+import { Account, AccountDocument } from '../schemas/account.schema';
 import {
   AccountActivationDocument,
   AccountActivationModel
@@ -234,19 +234,33 @@ export class AuthenticationService {
   getAccountFromId = (accountId: string) =>
     this._accountModel.findById(accountId).exec();
 
-  getAccountFromEmail = (email: string) =>
-    this._accountModel
-      .findOne({ email: email, visibility: EntityVisibility.Publish })
-      .exec();
+  getAccountFromEmail = (email: string) => {
+    const emailPattern = email.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
 
-  getAccountFromMobile = (mobileNo: string, countryCode: string) =>
-    this._accountModel
+    return this._accountModel
       .findOne({
-        'mobile.countryCode': countryCode,
-        'mobile.number': new RegExp(`${mobileNo}`),
+        email: new RegExp(`^${emailPattern}$`, 'i'),
         visibility: EntityVisibility.Publish
       })
       .exec();
+  };
+
+  /**
+   * get and validate account from mobile
+   * @param {string} mobileNumber
+   * @param {string} countryCode
+   * @returns {AccountDocument} account document
+   */
+  getAccountFromMobile = (mobileNo: string, countryCode: string) => {
+    const mobile = mobileNo.charAt(0) === '0' ? mobileNo.slice(1) : mobileNo;
+    return this._accountModel
+      .findOne({
+        'mobile.countryCode': countryCode,
+        'mobile.number': new RegExp(`${mobile}`),
+        visibility: EntityVisibility.Publish
+      })
+      .exec();
+  };
 
   /**
    *  For check if account is existed
@@ -254,10 +268,10 @@ export class AuthenticationService {
    * @returns {UserDocument}
    */
   getExistedUserFromCastcleId = (id: string) => {
+    const idPattern = id.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
+
     return this._userModel
-      .findOne({
-        displayId: { $regex: new RegExp('^' + id.toLowerCase() + '$', 'i') }
-      })
+      .findOne({ displayId: new RegExp(`^${idPattern}$`, 'i') })
       .exec();
   };
 
@@ -267,12 +281,18 @@ export class AuthenticationService {
    * @returns {UserDocument}
    */
   getUserFromCastcleId = (id: string) => {
+    const idPattern = id.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
+
     return this._userModel
       .findOne({
-        displayId: { $regex: new RegExp('^' + id.toLowerCase() + '$', 'i') },
+        displayId: new RegExp(`^${idPattern}$`, 'i'),
         visibility: EntityVisibility.Publish
       })
       .exec();
+  };
+
+  getUserFromAccount = (account: Account) => {
+    return this._userModel.findOne({ ownerAccount: account }).exec();
   };
 
   getUserFromAccountId = (credential: CredentialDocument) => {
@@ -284,6 +304,15 @@ export class AuthenticationService {
   getAccountActivationFromVerifyToken = (token: string) =>
     this._accountActivationModel.findOne({ verifyToken: token }).exec();
 
+  getEmailFromVerifyToken = async (token: string) => {
+    const accountActivation = await this._accountActivationModel
+      .findOne({ verifyToken: token })
+      .populate('account')
+      .exec();
+
+    return accountActivation?.account?.email;
+  };
+
   getAccountActivationFromCredential = (credential: CredentialDocument) =>
     this._accountActivationModel
       .findOne({ account: credential.account })
@@ -291,8 +320,8 @@ export class AuthenticationService {
 
   validateEmail = (email: string) => {
     const re =
-      /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
-    return re.test(email.toLowerCase());
+      /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/i;
+    return re.test(email);
   };
 
   _generateAccessToken = (payload: AccessTokenPayload) =>
@@ -398,15 +427,33 @@ export class AuthenticationService {
   /**
    * generate refCode and create Otp Document
    * @param {AccountDocument} account
+   * @param {OtpObjective} objective
+   * @param {string} requestId
+   * @param {string} channel
+   * @param {boolean} verify
    * @returns {OtpDocument}
    */
-  async generateOtp(account: AccountDocument, objective: OtpObjective) {
-    const otp = await this._otpModel.generate(account._id, objective);
+  async generateOtp(
+    account: AccountDocument,
+    objective: OtpObjective,
+    requestId: string,
+    channel: string,
+    verify: boolean,
+    sid?: string
+  ) {
+    const otp = await this._otpModel.generate(
+      account._id,
+      objective,
+      requestId,
+      channel,
+      verify,
+      sid
+    );
     return otp;
   }
 
   /**
-   * find refCode that has the same refCode and
+   * find Otp from account and refCode
    * @param {AccountDocument} account
    * @param {string} refCode
    * @returns {OtpDocument}
@@ -414,6 +461,36 @@ export class AuthenticationService {
   async getOtpFromAccount(account: AccountDocument, refCode: string) {
     return this._otpModel
       .findOne({ account: account._id, refCode: refCode })
+      .exec();
+  }
+
+  /**
+   * find all Otp from request id and objective
+   * @param {string} requestId
+   * @param {OtpObjective} objective
+   * @returns {OtpDocument}
+   */
+  async getAllOtpFromRequestIdObjective(
+    requestId: string,
+    objective?: OtpObjective
+  ) {
+    const filter = () => {
+      if (objective) return { requestId: requestId, action: objective };
+      else return { requestId: requestId };
+    };
+
+    return this._otpModel.find(filter).exec();
+  }
+
+  /**
+   * find Otp from request id and refCode
+   * @param {string} requestId
+   * @param {string} refCode
+   * @returns {OtpDocument}
+   */
+  async getOtpFromRequestIdRefCode(requestId: string, refCode: string) {
+    return this._otpModel
+      .findOne({ requestId: requestId, refCode: refCode })
       .exec();
   }
 

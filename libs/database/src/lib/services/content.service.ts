@@ -21,50 +21,79 @@
  * or have any questions.
  */
 
-import { Model, ObjectId } from 'mongoose';
-import { Inject, Injectable } from '@nestjs/common';
+import { FilterQuery, Model } from 'mongoose';
+import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { AccountDocument } from '../schemas/account.schema';
-import {
-  CommentDocument,
-  CredentialDocument,
-  CredentialModel
-} from '../schemas';
+import { CommentDocument, CredentialModel } from '../schemas';
 import { User, UserDocument, UserType } from '../schemas/user.schema';
-import { ContentDocument, Content } from '../schemas/content.schema';
+import {
+  ContentDocument,
+  Content,
+  toSignedContentPayloadItem
+} from '../schemas/content.schema';
 import {
   EngagementDocument,
   EngagementType
 } from '../schemas/engagement.schema';
-import { createPagination } from '../utils/common';
-import { PageDto, UpdateUserDto } from '../dtos/user.dto';
+import {
+  createCastcleFilter,
+  createCastcleMeta,
+  createPagination
+} from '../utils/common';
 import {
   SaveContentDto,
-  ContentPayloadDto,
   Author,
   CastcleContentQueryOptions,
   DEFAULT_CONTENT_QUERY_OPTIONS,
-  ContentResponse,
   ContentType,
-  QuotePayload,
-  RecastPayload,
   ShortPayload
 } from '../dtos/content.dto';
 import { RevisionDocument } from '../schemas/revision.schema';
 import {
+  CastcleIncludes,
   CastcleQueryOptions,
   DEFAULT_QUERY_OPTIONS,
   EntityVisibility
 } from '../dtos/common.dto';
-import { CommentDto, UpdateCommentDto } from '../dtos/comment.dto';
+import {
+  CommentDto,
+  CommentsReponse,
+  UpdateCommentDto
+} from '../dtos/comment.dto';
 import { CommentType } from '../schemas/comment.schema';
 import { FeedItemDocument } from '../schemas/feedItem.schema';
 import { FeedItemDto } from '../dtos/feedItem.dto';
 import { ContentAggregator } from '../aggregator/content.aggregator';
 import { HashtagService } from './hashtag.service';
+import {
+  GuestFeedItemDocument,
+  GuestFeedItemType
+} from '../schemas/guestFeedItems.schema';
+import {
+  GuestFeedItemDto,
+  GuestFeedItemPayload,
+  GuestFeedItemPayloadItem
+} from '../dtos/guestFeedItem.dto';
+import { QueryOption } from '../dtos/common.dto';
+import { Environment } from '@castcle-api/environments';
+import { CastcleException } from '@castcle-api/utils/exception';
+import { CastLogger } from '@castcle-api/logger';
+import { createTransport } from 'nodemailer';
 
 @Injectable()
 export class ContentService {
+  private logger = new CastLogger(ContentService.name);
+  private transporter = createTransport({
+    host: Environment.SMTP_HOST,
+    port: Environment.SMTP_PORT,
+    secure: true,
+    auth: {
+      user: Environment.SMTP_USERNAME,
+      pass: Environment.SMTP_PASSWORD
+    }
+  });
+
   constructor(
     @InjectModel('Account') public _accountModel: Model<AccountDocument>,
     @InjectModel('Credential')
@@ -81,13 +110,15 @@ export class ContentService {
     public _commentModel: Model<CommentDocument>,
     @InjectModel('FeedItem')
     public _feedItemModel: Model<FeedItemDocument>,
-    public hashtagService: HashtagService
+    public hashtagService: HashtagService,
+    @InjectModel('GuestFeedItem')
+    public _guestFeedItemModel: Model<GuestFeedItemDocument>
   ) {}
 
   /**
    *
    * @param {UserDocument} user the user that create this content if contentDto has no author this will be author by default
-   * @param {SaveContentDto} contentDto the content Dto that required for create a conent
+   * @param {SaveContentDto} contentDto the content Dto that required for create a content
    * @returns {ContentDocument} content.save() result
    */
   async createContentFromUser(user: UserDocument, contentDto: SaveContentDto) {
@@ -117,6 +148,37 @@ export class ContentService {
 
   /**
    *
+   * @param {Author} author the user that create this content
+   * @param {SaveContentDto[]} contentsDtos contents to save
+   * @returns {ContentDocument[]} saved contents
+   */
+  async createContentsFromAuthor(
+    author: Author,
+    contentsDtos: SaveContentDto[]
+  ): Promise<ContentDocument[]> {
+    const contentsToCreate = contentsDtos.map(async ({ payload, type }) => {
+      const hashtags =
+        this.hashtagService.extractHashtagFromContentPayload(payload);
+
+      await this.hashtagService.createFromTags(hashtags);
+
+      return {
+        author,
+        payload,
+        revisionCount: 0,
+        type,
+        visibility: EntityVisibility.Publish,
+        hashtags: hashtags
+      } as Content;
+    });
+
+    const contents = await Promise.all(contentsToCreate);
+
+    return this._contentModel.create(contents);
+  }
+
+  /**
+   *
    * @param {string} id get content from content's id
    * @returns {ContentDocument}
    */
@@ -135,7 +197,7 @@ export class ContentService {
   deleteContentFromId = async (id: string) => {
     const content = await this._contentModel.findById(id).exec();
     content.visibility = EntityVisibility.Deleted;
-    //rmeove enagement
+    //remove engagement
     if (content.isRecast || content.isQuote) {
       const engagement = await this._engagementModel
         .findOne({ itemId: content._id })
@@ -165,14 +227,14 @@ export class ContentService {
         const engagementType = content.isQuote
           ? EngagementType.Quote
           : EngagementType.Recast;
-        const incEngagment: { [key: string]: number } = {};
-        incEngagment[`engagements.${engagementType}.count`] = 1;
+        const incEngagement: { [key: string]: number } = {};
+        incEngagement[`engagements.${engagementType}.count`] = 1;
         //use update to byPass save hook to prevent recursive and revision api
         const updateResult = await this._contentModel
           .updateOne(
             { _id: sourceContent._id },
             {
-              $inc: incEngagment
+              $inc: incEngagement
             }
           )
           .exec();
@@ -226,19 +288,17 @@ export class ContentService {
     user: UserDocument,
     options: CastcleContentQueryOptions = DEFAULT_CONTENT_QUERY_OPTIONS
   ) => {
-    const findFilter: {
-      'author.id': any;
-      type?: string;
-      visibility: EntityVisibility;
-    } = {
+    let findFilter: any = {
       'author.id': user._id,
       visibility: EntityVisibility.Publish
     };
     if (options.type) findFilter.type = options.type;
-    const query = this._contentModel
-      .find(findFilter)
-      .skip(options.page - 1)
-      .limit(options.limit);
+    findFilter = await createCastcleFilter(
+      findFilter,
+      options,
+      this._contentModel
+    );
+    const query = this._contentModel.find(findFilter).limit(options.maxResults);
     const totalDocument = await this._contentModel.count(findFilter).exec();
     if (options.sortBy.type === 'desc') {
       return {
@@ -381,10 +441,7 @@ export class ContentService {
   _getAuthorFromUser = (user: UserDocument) => {
     const author: Author = {
       id: user._id,
-      avatar:
-        user.profile && user.profile.images && user.profile.images.avatar
-          ? user.profile.images.avatar
-          : null,
+      avatar: user.profile?.images?.avatar || null,
       castcleId: user.displayId,
       displayName: user.displayName,
       followed: false,
@@ -490,30 +547,27 @@ export class ContentService {
   getContentsForAdmin = async (
     options: CastcleContentQueryOptions = DEFAULT_CONTENT_QUERY_OPTIONS
   ) => {
-    const findFilter: {
-      type?: string;
-      visibility: EntityVisibility;
-    } = {
+    let findFilter: any = {
       visibility: EntityVisibility.Publish
     };
     if (options.type) findFilter.type = options.type;
-    const query = this._contentModel
-      .find(findFilter)
-      .skip(options.page - 1)
-      .limit(options.limit);
-    const totalDocument = await this._contentModel.count(findFilter).exec();
-    if (options.sortBy.type === 'desc') {
-      return {
-        total: totalDocument,
-        items: await query.sort(`-${options.sortBy.field}`).exec(),
-        pagination: createPagination(options, totalDocument)
-      };
-    } else
-      return {
-        total: totalDocument,
-        items: await query.sort(`${options.sortBy.field}`).exec(),
-        pagination: createPagination(options, totalDocument)
-      };
+    findFilter = await createCastcleFilter(
+      findFilter,
+      options,
+      this._contentModel
+    );
+    const query = this._contentModel.find(findFilter).limit(options.maxResults);
+    const items =
+      options.sortBy.type === 'desc'
+        ? await query.sort(`-${options.sortBy.field}`).exec()
+        : await query.sort(`${options.sortBy.field}`).exec();
+    return {
+      items,
+      includes: new CastcleIncludes({
+        users: items.map(({ author }) => author)
+      }),
+      meta: createCastcleMeta(items)
+    };
   };
 
   /**
@@ -649,7 +703,7 @@ export class ContentService {
   getCommentsFromContent = async (
     content: ContentDocument,
     options: CastcleQueryOptions = DEFAULT_QUERY_OPTIONS
-  ) => {
+  ): Promise<CommentsReponse> => {
     const filter = {
       targetRef: {
         $id: content._id,
@@ -665,7 +719,6 @@ export class ContentService {
         `${options.sortBy.type === 'desc' ? '-' : ''}${options.sortBy.field}`
       )
       .exec();
-    const totalDocument = await this._commentModel.count(filter).exec();
     const engagements = await this._engagementModel.find({
       targetRef: {
         $in: rootComments.map((rComment) => ({
@@ -680,9 +733,8 @@ export class ContentService {
       )
     );
     return {
-      total: totalDocument,
-      items: payloads,
-      pagination: createPagination(options, totalDocument)
+      payload: payloads,
+      meta: createCastcleMeta(rootComments)
     };
   };
 
@@ -696,6 +748,7 @@ export class ContentService {
     rootComment: CommentDocument,
     updateCommentDto: UpdateCommentDto
   ) => {
+    const session = this._accountModel.startSession();
     const comment = await this._commentModel.findById(rootComment._id);
     comment.message = updateCommentDto.message;
     const tags = this.hashtagService.extractHashtagFromText(
@@ -773,7 +826,7 @@ export class ContentService {
   };
 
   /**
-   * get content by id that visibilty = equal true
+   * get content by id that visibility = equal true
    * @param commentId
    * @returns
    */
@@ -946,4 +999,116 @@ export class ContentService {
     const viewer = await this._userModel.findById(viewerId).exec();
     return this.createFeedItemFromAuthorToViewer(author, viewer);
   };
+
+  /**
+   *
+   * @param contentId
+   * @returns {GuestFeedItemDocument}
+   */
+  createGuestFeedItemFromAuthorId = async (contentId: any) => {
+    const newGuestFeedItem = new this._guestFeedItemModel({
+      score: 0,
+      type: GuestFeedItemType.Content,
+      content: contentId
+    } as GuestFeedItemDto);
+    return newGuestFeedItem.save();
+  };
+
+  /**
+   * Get guestFeedItem according to accountCountry code  if have sinceId it will query all feed after sinceId
+   * @param {QueryOption} query
+   * @param {string} accountCountryCode
+   * @returns {GuestFeedItemDocument[]}
+   */
+  getGuestFeedItems = async (
+    query: QueryOption,
+    accountCountryCode?: string
+  ) => {
+    const filter: FilterQuery<GuestFeedItemDocument> = {
+      countryCode: accountCountryCode.toLowerCase() ?? 'en'
+    };
+    if (query.sinceId) {
+      const guestFeedItemSince = await this._guestFeedItemModel
+        .findById(query.sinceId)
+        .exec();
+      filter.createdAt = {
+        $gt: new Date(guestFeedItemSince.createdAt)
+      };
+    } else if (query.untilId) {
+      const guestFeedItemUntil = await this._guestFeedItemModel
+        .findById(query.untilId)
+        .exec();
+      filter.createdAt = {
+        $lt: new Date(guestFeedItemUntil.createdAt)
+      };
+    }
+    const documents = await this._guestFeedItemModel
+      .find(filter)
+      .populate('content')
+      .limit(query.maxResults)
+      .sort({ score: -1, createdAt: -1 })
+      .exec();
+
+    return {
+      payload: documents.map(
+        (item) =>
+          ({
+            id: item.id,
+            feature: {
+              slug: 'feed',
+              key: 'feature.feed',
+              name: 'Feed'
+            },
+            circle: {
+              id: 'for-you',
+              key: 'circle.forYou',
+              name: 'For You',
+              slug: 'forYou'
+            },
+            payload: toSignedContentPayloadItem(item.content),
+            type: 'content'
+          } as GuestFeedItemPayloadItem)
+      ),
+      includes: new CastcleIncludes({
+        users: documents.map((item) => item.content.author)
+      }),
+      meta: createCastcleMeta(documents)
+    } as GuestFeedItemPayload;
+  };
+
+  async reportContent(
+    user: UserDocument,
+    content: ContentDocument,
+    message: string
+  ) {
+    if (!content) throw CastcleException.CONTENT_NOT_FOUND;
+
+    const engagementFilter = {
+      user: user._id,
+      targetRef: { $ref: 'content', $id: content._id },
+      type: EngagementType.Report
+    };
+
+    await this._engagementModel
+      .updateOne(
+        engagementFilter,
+        { ...engagementFilter, visibility: EntityVisibility.Publish },
+        { upsert: true }
+      )
+      .exec();
+
+    const mail = await this.transporter.sendMail({
+      from: 'castcle-noreply" <no-reply@castcle.com>',
+      subject: `Report content: ${content._id}`,
+      to: Environment.SMTP_ADMIN_EMAIL,
+      text: `Content: ${content._id} has been reported.
+Author: ${content.author.displayName} (${content.author.id})
+Body: ${JSON.stringify(content.payload, null, 2)}
+
+ReportedBy: ${user.displayName} (${user._id})
+Message: ${message}`
+    });
+
+    this.logger.log(`Report has been submitted ${mail.messageId}`);
+  }
 }

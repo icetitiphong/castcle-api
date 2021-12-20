@@ -21,6 +21,11 @@
  * or have any questions.
  */
 import { TelegramUserInfo, TwillioChannel } from '@castcle-api/utils/clients';
+import {
+  AccessTokenResponse,
+  AppleIdTokenType,
+  RefreshTokenResponse
+} from 'apple-sign-in-rest';
 
 export class FacebookClientMock {
   getAccessToken() {
@@ -168,7 +173,36 @@ export class TwitterClientMock {
 
 export class TwillioClientMock {
   async requestOtp(receiver: string, channel: TwillioChannel) {
-    return true;
+    return {
+      sid: 'VEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+      service_sid: 'VAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+      account_sid: 'ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+      to: '+15017122661',
+      channel: 'sms',
+      status: 'pending',
+      valid: false,
+      date_created: '2015-07-30T20:00:00Z',
+      date_updated: '2015-07-30T20:00:00Z',
+      lookup: {
+        carrier: {
+          error_code: null,
+          name: 'Carrier Name',
+          mobile_country_code: '310',
+          mobile_network_code: '150',
+          type: 'mobile'
+        }
+      },
+      amount: null,
+      payee: null,
+      send_code_attempts: [
+        {
+          time: '2015-07-30T20:00:00Z',
+          channel: 'SMS',
+          channel_id: null
+        }
+      ],
+      url: 'https://verify.twilio.com/v2/Services/VAXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/Verifications/VEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+    };
   }
 
   async verifyOtp(receiver: string, otp: string) {
@@ -177,5 +211,123 @@ export class TwillioClientMock {
     } else {
       return { status: 'pending' };
     }
+  }
+
+  async canceledOtp(sid: string) {
+    return true;
+  }
+}
+
+export class AppleClientMock {
+  async requestAuthorizationUrl(callBackUrl: string) {
+    return callBackUrl;
+  }
+
+  async verifyToken(
+    idToken: string,
+    subject: string
+  ): Promise<AppleIdTokenType> {
+    let result;
+    if (idToken === '1') {
+      result = null;
+    } else if (idToken === '2') {
+      result = {
+        iss: 'https://appleid.apple.com',
+        aud: 'com.sarunw.siwa',
+        exp: '1577943613',
+        iat: '1577943013',
+        sub: 'aaa.bbb.ccc',
+        nonce: 'nounce',
+        nonce_supported: true,
+        c_hash: 'xxxx',
+        email: 'xxxx@privaterelay.appleid.com',
+        email_verified: true,
+        is_private_email: true,
+        auth_time: 1577943013
+      } as AppleIdTokenType;
+    } else {
+      result = {
+        iss: 'https://appleid.apple.com',
+        aud: 'com.sarunw.siwa',
+        exp: '1577943613',
+        iat: '1577943013',
+        sub: 'xxx.yyy.zzz',
+        nonce: 'nounce',
+        nonce_supported: true,
+        c_hash: 'xxxx',
+        email: 'xxxx@privaterelay.appleid.com',
+        email_verified: true,
+        is_private_email: true,
+        auth_time: 1577943013
+      } as AppleIdTokenType;
+    }
+    return result;
+  }
+
+  async refreshToken(refreshToken: string): Promise<RefreshTokenResponse> {
+    return {
+      access_token: 'ACCESS_TOKEN',
+      expires_in: 1577943013,
+      token_type: 'refresh_token'
+    };
+  }
+
+  async authorizationToken(
+    code: string,
+    redirectUrl: string
+  ): Promise<AccessTokenResponse> {
+    return {
+      // A token used to access allowed data. Currently has no use
+      access_token: 'ACCESS_TOKEN',
+      // It will always be Bearer.
+      token_type: 'Bearer',
+      // The amount of time, in seconds, before the access token expires.
+      expires_in: 3600,
+      // used to regenerate new access tokens. Store this token securely on your server.
+      refresh_token: 'REFRESH_TOKEN',
+      // A JSON Web Token that contains the user’s identity information.
+      id_token: 'ID_TOKEN'
+    };
+  }
+}
+
+export class GoogleClientMock {
+  async verifyToken(token: string) {
+    if (token === '1') {
+      return null;
+    } else {
+      return {
+        aud: 'com.sarunw.google',
+        user_id: 'mock_user_google',
+        scopes: ['name', 'email'],
+        expiry_date: 1577943013,
+        sub: '111.222.333',
+        azp: '',
+        access_type: '',
+        email: 'test@gmail.com',
+        email_verified: true
+      };
+    }
+  }
+
+  async getGoogleUserInfo(token: string) {
+    let result;
+    if (token === '1' || token === '3') {
+      result = null;
+    } else if (token === '2') {
+      result = {
+        email: 'test@gmail.com',
+        id: 'mock_user_google_2',
+        name: 'John Dow'
+      };
+    } else {
+      result = {
+        email: 'test@gmail.com',
+        id: 'mock_user_google',
+        name: 'John Dow'
+      };
+    }
+
+    return result;
   }
 }

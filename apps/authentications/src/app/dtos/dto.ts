@@ -51,27 +51,52 @@ export class LoginDto {
   password: string;
 }
 
-export class SocialConnectInfo {
-  @ApiProperty()
-  authToken?: string;
-  @ApiProperty()
-  authTokenSecret?: string;
-  @ApiProperty()
-  authVerifierToken?: string;
+export class SocialUser {
+  @IsString()
   @ApiProperty()
   id?: string;
+  @IsString()
   @ApiProperty()
   first_name?: string;
+  @IsString()
   @ApiProperty()
   last_name?: string;
+  @IsString()
   @ApiProperty()
   username?: string;
+  @IsString()
   @ApiProperty()
   photo_url?: string;
+  @IsString()
   @ApiProperty()
   auth_date?: string;
+  @IsEmail()
+  @IsString()
+  @ApiProperty()
+  email?: string;
+}
+export class SocialConnectInfo {
+  @IsString()
+  @ApiProperty()
+  authToken?: string;
+  @IsString()
+  @ApiProperty()
+  authTokenSecret?: string;
+  @IsString()
+  @ApiProperty()
+  authVerifierToken?: string;
+  @IsString()
   @ApiProperty()
   hash?: string;
+  @IsString()
+  @ApiProperty()
+  code?: string;
+  @IsString()
+  @ApiProperty()
+  redirectUrl?: string;
+  @IsString()
+  @ApiProperty({ type: SocialUser, isArray: false })
+  socialUser?: SocialUser;
 }
 
 export class SocialConnectDto {
@@ -159,14 +184,10 @@ export class ChangePasswordBody {
 
 export class VerificationPasswordBody {
   @ApiProperty()
-  password: string;
-}
+  objective: string;
 
-export class VerificationPasswordResponse {
   @ApiProperty()
-  refCode: string;
-  @ApiProperty()
-  expiresTime: string;
+  password: string;
 }
 
 export interface SocialConnect {
@@ -221,19 +242,21 @@ export class RequestOtpDto {
   @ApiProperty()
   payload: ForgotPasswordPayload;
 }
-
-export class RequestOtpResponse {
-  @ApiProperty()
-  refCode: string;
-
-  @ApiProperty()
-  expiresTime: string;
-}
-
-export class ForgotPasswordVerificationOtpDto extends RequestOtpDto {
+export class verificationOtpDto extends RequestOtpDto {
   @ApiProperty()
   refCode: string;
 
   @ApiProperty()
   otp: string;
+}
+
+export class otpResponse {
+  @ApiProperty()
+  objective: string;
+
+  @ApiProperty()
+  refCode: string;
+
+  @ApiProperty()
+  expiresTime: string;
 }

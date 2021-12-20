@@ -26,6 +26,7 @@ import {
   AccountAuthenIdType,
   OtpObjective
 } from '@castcle-api/database/schemas';
+import { Environment } from '@castcle-api/environments';
 import { CastLogger, CastLoggerOptions } from '@castcle-api/logger';
 import { Host } from '@castcle-api/utils';
 import {
@@ -38,7 +39,6 @@ import {
   CredentialInterceptor,
   CredentialRequest,
   HeadersRequest,
-  IpTrackerInterceptor,
   TokenInterceptor,
   TokenRequest
 } from '@castcle-api/utils/interceptors';
@@ -60,27 +60,27 @@ import {
   ApiOkResponse,
   ApiResponse
 } from '@nestjs/swagger';
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { AppService } from './app.service';
+import { getEmailVerificationHtml } from './configs';
 import {
   ChangePasswordBody,
   CheckEmailExistDto,
   CheckIdExistDto,
   CheckingResponse,
-  ForgotPasswordVerificationOtpDto,
   GuestLoginDto,
   LoginDto,
   LoginResponse,
   OauthTokenResponse,
+  otpResponse,
   RefreshTokenResponse,
   RegisterByEmailDto,
   RequestOtpDto,
-  RequestOtpResponse,
   SocialConnectDto,
   SuggestCastcleIdReponse,
   TokenResponse,
-  VerificationPasswordBody,
-  VerificationPasswordResponse
+  verificationOtpDto,
+  VerificationPasswordBody
 } from './dtos/dto';
 import {
   GuestInterceptor,
@@ -113,24 +113,16 @@ export class AuthenticationController {
   @HttpCode(200)
   async checkEmailExists(
     @Req() req: HeadersRequest,
-    @Body() payloadCheckEmailExistDto: CheckEmailExistDto
+    @Body() { email }: CheckEmailExistDto
   ) {
-    //if there is no email in the request and email is not valid (not email )
-    if (
-      !(
-        payloadCheckEmailExistDto.email &&
-        this.authService.validateEmail(payloadCheckEmailExistDto.email)
-      )
-    )
+    if (!this.authService.validateEmail(email))
       throw new CastcleException(CastcleStatus.INVALID_EMAIL, req.$language);
     try {
-      const account = await this.authService.getAccountFromEmail(
-        payloadCheckEmailExistDto.email
-      );
+      const account = await this.authService.getAccountFromEmail(email);
       return {
         message: 'success message',
         payload: {
-          exist: account ? true : false // true=มีในระบบ, false=ไม่มีในระบบ
+          exist: account ? true : false
         }
       };
     } catch (error) {
@@ -150,14 +142,15 @@ export class AuthenticationController {
   @CastcleTrack()
   @Post('login')
   @HttpCode(200)
-  async login(@Req() req: CredentialRequest, @Body() body: LoginDto) {
+  async login(
+    @Req() req: CredentialRequest,
+    @Body() { username, password }: LoginDto
+  ) {
     try {
-      const account = await this.authService.getAccountFromEmail(
-        body.username.toLowerCase()
-      );
+      const account = await this.authService.getAccountFromEmail(username);
       if (!account)
         throw new CastcleException(CastcleStatus.INVALID_EMAIL, req.$language);
-      if (await account.verifyPassword(body.password)) {
+      if (await account.verifyPassword(password)) {
         const embedCredentialByDeviceUUID = account.credentials.find(
           (item) => item.deviceUUID === req.$credential.deviceUUID
         );
@@ -524,21 +517,22 @@ export class AuthenticationController {
   @ApiBearerAuth()
   @ApiResponse({
     status: 200,
-    type: RequestOtpResponse
+    type: otpResponse
   })
   @CastcleBasicAuth()
   @Post('verificationOTP')
   @HttpCode(200)
   async verificationOTP(
-    @Body() body: ForgotPasswordVerificationOtpDto,
+    @Body() body: verificationOtpDto,
     @Req() req: CredentialRequest
   ) {
     this.logger.log(
-      `Start verify OPT channel : ${body.channel} objective : ${body.objective}`
+      `Start verify OPT channel: ${body.channel} objective: ${body.objective} refCode: ${body.refCode}`
     );
     const otp = await this.appService.verificationOTP(body, req);
     if (otp && otp.isValid()) {
-      const response: RequestOtpResponse = {
+      const response: otpResponse = {
+        objective: body.objective,
         refCode: otp.refCode,
         expiresTime: otp.expireDate.toISOString()
       };
@@ -551,18 +545,19 @@ export class AuthenticationController {
   @ApiBearerAuth()
   @ApiResponse({
     status: 200,
-    type: RequestOtpResponse
+    type: otpResponse
   })
   @CastcleBasicAuth()
   @Post('requestOTP')
   @HttpCode(200)
   async requestOTP(@Body() body: RequestOtpDto, @Req() req: CredentialRequest) {
     this.logger.log(
-      `Start request OPT channel : ${body.channel} objective : ${body.objective}`
+      `Start request OPT channel: ${body.channel} objective: ${body.objective}`
     );
     const otp = await this.appService.requestOtpCode(body, req);
     if (otp && otp.isValid()) {
-      const response: RequestOtpResponse = {
+      const response: otpResponse = {
+        objective: body.objective,
         refCode: otp.refCode,
         expiresTime: otp.expireDate.toISOString()
       };
@@ -594,20 +589,25 @@ export class AuthenticationController {
    */
   @Version(VERSION_NEUTRAL)
   @Get('verify')
-  verify(@Req() req: Request) {
-    const verifyUrl =
-      Host.getHostname(req) + '/authentications/verificationEmail';
-    if (req.query.code) {
-      return `Verifying you will get a pop up once the process is done.<script>fetch("${verifyUrl}", {
-        headers: {
-          "Accept-Version": "1.0",
-          Accept: "*/*",
-          "Accept-Language": "th",
-          Authorization: "Bearer ${req.query.code}"
-        },
-        method: "POST"
-      }).then(r => r.json()).then(r => { console.log(r);alert('verification success');})</script>`;
-    } else throw new CastcleException(CastcleStatus.REQUEST_URL_NOT_FOUND);
+  async verify(@Req() req: CredentialRequest) {
+    if (!req.query.code) {
+      throw new CastcleException(CastcleStatus.REQUEST_URL_NOT_FOUND);
+    }
+
+    const token = req.query.code as string;
+    await this.verificationEmail({
+      $language: req.$language,
+      $token: token
+    } as TokenRequest);
+    const email = await this.authService.getEmailFromVerifyToken(token);
+
+    return getEmailVerificationHtml(
+      email,
+      this.appService.getCastcleMobileLink(),
+      Environment && Environment.SMTP_ADMIN_EMAIL
+        ? Environment.SMTP_ADMIN_EMAIL
+        : 'admin@castcle.com'
+    );
   }
 
   @ApiOkResponse({
@@ -632,26 +632,42 @@ export class AuthenticationController {
   })
   @ApiResponse({
     status: 201,
-    type: VerificationPasswordResponse
+    type: otpResponse
   })
   @UseInterceptors(CredentialInterceptor)
   @Post('verificationPassword')
   async verificationPassword(
-    @Body('password') password: string,
+    @Body() payload: VerificationPasswordBody,
     @Req() req: CredentialRequest
-  ): Promise<VerificationPasswordResponse> {
-    //req.$credential.
+  ): Promise<otpResponse> {
+    const objective: OtpObjective = <OtpObjective>payload.objective;
+    if (
+      !objective ||
+      !Object.values(OtpObjective).includes(objective) ||
+      objective !== OtpObjective.ChangePassword
+    ) {
+      this.logger.error(`Invalid objective.`);
+      throw new CastcleException(
+        CastcleStatus.PAYLOAD_TYPE_MISMATCH,
+        req.$language
+      );
+    }
+
     const account = await this.authService.getAccountFromCredential(
       req.$credential
     );
     //add password checker
-    this.appService.validatePassword(password, req.$language);
-    if (await account.verifyPassword(password)) {
+    this.appService.validatePassword(payload.password, req.$language);
+    if (await account.verifyPassword(payload.password)) {
       const otp = await this.authService.generateOtp(
         account,
-        OtpObjective.ChangePassword
+        objective,
+        req.$credential.account._id,
+        '',
+        true
       );
       return {
+        objective: payload.objective,
         refCode: otp.refCode,
         expiresTime: otp.expireDate.toISOString()
       };
@@ -672,19 +688,31 @@ export class AuthenticationController {
     @Body() payload: ChangePasswordBody,
     @Req() req: CredentialRequest
   ) {
-    this.logger.log(
-      `Start change password objective : ${payload.objective}, refCode: ${payload.refCode}`
-    );
+    const objective: OtpObjective = <OtpObjective>payload.objective;
+    if (
+      !objective ||
+      !Object.values(OtpObjective).includes(objective) ||
+      (objective !== OtpObjective.ChangePassword &&
+        objective !== OtpObjective.ForgotPassword)
+    ) {
+      this.logger.error(`Invalid objective.`);
+      throw new CastcleException(
+        CastcleStatus.PAYLOAD_TYPE_MISMATCH,
+        req.$language
+      );
+    }
+
+    this.logger.log(`Start change password refCode: ${payload.refCode}`);
     return this.appService.resetPassword(payload, req);
   }
 
-  @ApiBearerAuth()
+  @CastcleBasicAuth()
   @ApiBody({
     type: SocialConnectDto
   })
   @ApiOkResponse({
     status: 200,
-    type: TokenResponse
+    type: LoginResponse
   })
   @UseInterceptors(CredentialInterceptor)
   @CastcleTrack()
@@ -734,12 +762,12 @@ export class AuthenticationController {
           this.logger.log(`social login Telegram`);
           token = await this.appService.socialLogin(
             {
-              socialId: body.payload.id,
+              socialId: body.payload.socialUser.id,
               email: '',
-              name: `${body.payload.first_name} ${body.payload.last_name}`,
+              name: `${body.payload.socialUser.first_name} ${body.payload.socialUser.last_name}`,
               provider: AccountAuthenIdType.Telegram,
-              profileImage: body.payload.photo_url
-                ? body.payload.photo_url
+              profileImage: body.payload.socialUser.photo_url
+                ? body.payload.socialUser.photo_url
                 : '',
               socialToken: body.payload.hash,
               socialSecretToken: ''
@@ -783,11 +811,89 @@ export class AuthenticationController {
         }
         break;
       }
+      case AccountAuthenIdType.Apple: {
+        const userApple = await this.appService.appleConnect(
+          body.payload,
+          req.$language
+        );
+        if (userApple && userApple.user.sub) {
+          this.logger.log(`social login Apple`);
+          token = await this.appService.socialLogin(
+            {
+              socialId: userApple.user.sub,
+              email: userApple.user.email ? userApple.user.email : '',
+              name: `${body.payload.socialUser.first_name} ${body.payload.socialUser.last_name}`,
+              provider: AccountAuthenIdType.Apple,
+              profileImage: '',
+              socialToken: body.payload.authToken,
+              socialSecretToken:
+                userApple.token && userApple.token.refresh_token
+                  ? userApple.token.refresh_token
+                  : ''
+            },
+            req.$credential
+          );
+        } else {
+          this.logger.error(`Can't get user data.`);
+          throw new CastcleException(
+            CastcleStatus.FORBIDDEN_REQUEST,
+            req.$language
+          );
+        }
+        break;
+      }
+      case AccountAuthenIdType.Google: {
+        const userGoogle = await this.appService.googleConnect(
+          body.payload,
+          req.$language
+        );
+        if (userGoogle && userGoogle.userVerify && userGoogle.tokenData) {
+          this.logger.log(
+            `social login Google id: ${userGoogle.userVerify.id}`
+          );
+          token = await this.appService.socialLogin(
+            {
+              socialId: userGoogle.userVerify.id
+                ? userGoogle.userVerify.id
+                : '',
+              email: userGoogle.userVerify.email
+                ? userGoogle.userVerify.email
+                : '',
+              name: userGoogle.userVerify.name,
+              provider: AccountAuthenIdType.Google,
+              profileImage: userGoogle.userVerify.picture
+                ? userGoogle.userVerify.picture
+                : '',
+              socialToken: body.payload.authTokenSecret,
+              socialSecretToken: ''
+            },
+            req.$credential
+          );
+        } else {
+          this.logger.error(`Can't get user data.`);
+          throw new CastcleException(
+            CastcleStatus.FORBIDDEN_REQUEST,
+            req.$language
+          );
+        }
+        break;
+      }
     }
-    return token;
+    this.logger.log('get User Profile');
+    const userProfile = await this.appService.getUserProfile(req.$credential);
+    return {
+      profile: userProfile.profile
+        ? await userProfile.profile.toUserResponse()
+        : null,
+      pages: userProfile.pages
+        ? userProfile.pages.items.map((item) => item.toPageResponse())
+        : null,
+      accessToken: token.accessToken,
+      refreshToken: token.refreshToken
+    } as LoginResponse;
   }
 
-  @ApiBearerAuth()
+  @CastcleBasicAuth()
   @ApiBody({
     type: SocialConnectDto
   })
@@ -851,14 +957,14 @@ export class AuthenticationController {
           this.logger.log('get AccountAuthenIdFromSocialId');
           const socialAccount =
             await this.authService.getAccountAuthenIdFromSocialId(
-              body.payload.id,
+              body.payload.socialUser.id,
               AccountAuthenIdType.Telegram
             );
           if (!socialAccount) {
             await this.authService.createAccountAuthenId(
               currentAccount,
               AccountAuthenIdType.Telegram,
-              body.payload.id,
+              body.payload.socialUser.id,
               body.payload.hash,
               ''
             );
@@ -908,10 +1014,83 @@ export class AuthenticationController {
         }
         break;
       }
+      case AccountAuthenIdType.Apple: {
+        this.logger.log(`Apple Connect`);
+        const userApp = await this.appService.appleConnect(
+          body.payload,
+          req.$language
+        );
+
+        if (userApp) {
+          this.logger.log('get AccountAuthenIdFromSocialId');
+          const socialAccount =
+            await this.authService.getAccountAuthenIdFromSocialId(
+              userApp.user.sub,
+              AccountAuthenIdType.Apple
+            );
+          if (!socialAccount) {
+            await this.authService.createAccountAuthenId(
+              currentAccount,
+              AccountAuthenIdType.Apple,
+              userApp.user.sub,
+              body.payload.authToken,
+              userApp.token && userApp.token.refresh_token
+                ? userApp.token.refresh_token
+                : ''
+            );
+          } else {
+            this.logger.warn(`already connect social: ${body.provider}.`);
+          }
+        } else {
+          this.logger.error(`Can't get user data.`);
+          throw new CastcleException(
+            CastcleStatus.FORBIDDEN_REQUEST,
+            req.$language
+          );
+        }
+        break;
+      }
+      case AccountAuthenIdType.Google: {
+        this.logger.log(`Google Connect`);
+        const userGoogle = await this.appService.googleConnect(
+          body.payload,
+          req.$language
+        );
+
+        if (userGoogle && userGoogle.userVerify && userGoogle.tokenData) {
+          this.logger.log('get AccountAuthenIdFromSocialId');
+          const socialAccount =
+            await this.authService.getAccountAuthenIdFromSocialId(
+              userGoogle.userVerify.id,
+              AccountAuthenIdType.Google
+            );
+          if (!socialAccount) {
+            this.logger.log(
+              `Connect account id:${currentAccount._id} to google id: ${userGoogle.userVerify.id}`
+            );
+            await this.authService.createAccountAuthenId(
+              currentAccount,
+              AccountAuthenIdType.Google,
+              userGoogle.userVerify.id,
+              body.payload.authToken,
+              ''
+            );
+          } else {
+            this.logger.warn(`already connect social: ${body.provider}.`);
+          }
+        } else {
+          this.logger.error(`Can't get user data.`);
+          throw new CastcleException(
+            CastcleStatus.FORBIDDEN_REQUEST,
+            req.$language
+          );
+        }
+        break;
+      }
     }
   }
 
-  @ApiBearerAuth()
+  @CastcleBasicAuth()
   @ApiOkResponse({
     status: 200,
     type: OauthTokenResponse

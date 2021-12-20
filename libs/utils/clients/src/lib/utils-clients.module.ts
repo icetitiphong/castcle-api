@@ -23,12 +23,14 @@
 import { Environment } from '@castcle-api/environments';
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
+import { AppleClient } from './apple/apple.client';
 import { FacebookClient } from './facebook/facebook.client';
 import {
   FacebookAccessToken,
   FacebookTokenData,
   FacebookUserInfo
 } from './facebook/facebook.message';
+import { GoogleClient } from './google/google.client';
 import { TelegramClient } from './telegram/telegram.client';
 import { TelegramUserInfo } from './telegram/telegram.message';
 import { TwillioClient } from './twillio/twillio.client';
@@ -39,17 +41,26 @@ import { TwitterAccessToken, TwitterUserData } from './twitter/twitter.message';
 @Module({
   imports: [
     HttpModule.register({
-      timeout: Environment.http_time_out
+      timeout: Environment.HTTP_TIME_OUT
     })
   ],
   controllers: [],
-  providers: [FacebookClient, TelegramClient, TwitterClient, TwillioClient],
+  providers: [
+    FacebookClient,
+    TelegramClient,
+    TwitterClient,
+    TwillioClient,
+    AppleClient,
+    GoogleClient
+  ],
   exports: [
     HttpModule,
     FacebookClient,
     TelegramClient,
     TwitterClient,
-    TwillioClient
+    AppleClient,
+    TwillioClient,
+    GoogleClient
   ]
 })
 export class UtilsClientsModule {}
@@ -64,6 +75,8 @@ export {
   TwitterClient,
   TwitterAccessToken,
   TwitterUserData,
+  AppleClient,
   TwillioClient,
-  TwillioChannel
+  TwillioChannel,
+  GoogleClient
 };

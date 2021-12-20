@@ -21,9 +21,9 @@
  * or have any questions.
  */
 import { ApiProperty } from '@nestjs/swagger';
+import { IsNotEmpty, IsString } from 'class-validator';
 import { PageVerified, UserVerified } from '../schemas/user.schema';
 import { CastcleImage, Pagination } from './common.dto';
-import { IsString, IsNotEmpty } from 'class-validator';
 
 class UserImage {
   @ApiProperty()
@@ -137,6 +137,9 @@ export class PageModelDto {
 
 export class PageResponseDto {
   @ApiProperty()
+  id: string;
+
+  @ApiProperty()
   castcleId: string;
 
   @ApiProperty()
@@ -174,10 +177,10 @@ export class PageResponseDto {
   };
 
   @ApiProperty()
-  updateAt: string;
+  updatedAt: string;
 
   @ApiProperty()
-  createAt: string;
+  createdAt: string;
 }
 
 export class UpdatePageDto {

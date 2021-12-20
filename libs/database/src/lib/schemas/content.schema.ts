@@ -23,19 +23,18 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import * as mongoose from 'mongoose';
 import { Document, Model } from 'mongoose';
-import { Account } from '../schemas/account.schema';
 import {
   ContentPayloadDto,
   ShortPayload,
-  ContentType,
   BlogPayload,
   Author,
-  ImagePayload
+  ImagePayload,
+  ContentPayloadItem
 } from '../dtos/content.dto';
 import { CastcleBase } from './base.schema';
 import { RevisionDocument } from './revision.schema';
 import { EngagementDocument, EngagementType } from './engagement.schema';
-import { CastcleImage, EntityVisibility } from '../dtos/common.dto';
+import { CastcleImage } from '../dtos/common.dto';
 import { postContentSave, preContentSave } from '../hooks/content.save';
 import { UserDocument } from '.';
 import { RelationshipDocument } from './relationship.schema';
@@ -125,6 +124,7 @@ interface IContent extends Document {
    * @returns {ContentPayloadDto} return payload that need to use in controller (not yet implement with engagement)
    */
   toContentPayload(engagements?: EngagementDocument[]): ContentPayloadDto;
+  toContentPayloadItem(engagements?: EngagementDocument[]): ContentPayloadItem;
   toUnsignedContentPayload(
     engagements?: EngagementDocument[]
   ): ContentPayloadDto;
@@ -149,7 +149,11 @@ export const signContentPayload = (
       ? payload[engagementNameMap[key]][engagementNameMap[key]]
       : false;
   }
-  if (payload.payload.photo && payload.payload.photo.contents) {
+  if (
+    payload.payload &&
+    payload.payload.photo &&
+    payload.payload.photo.contents
+  ) {
     payload.payload.photo.contents = (
       payload.payload.photo.contents as CastcleImage[]
     ).map((url: CastcleImage) => {
@@ -176,9 +180,14 @@ export const signContentPayload = (
       return item;
     });
   }
-  if (payload.author && payload.author.avatar)
+  if (
+    payload.author &&
+    payload.author.avatar &&
+    !payload.author.avatar['isSign']
+  )
     payload.author.avatar = new Image(payload.author.avatar).toSignUrls();
-  else if (payload.author) payload.author.avatar = Configs.DefaultAvatarImages;
+  else if (payload.author && !payload.author.avatar)
+    payload.author.avatar = Configs.DefaultAvatarImages;
 
   if (payload.originalPost)
     payload.originalPost.author.avatar =
@@ -187,6 +196,116 @@ export const signContentPayload = (
   console.debug('afterSign', JSON.stringify(payload));
   return payload;
 };
+
+export const transformContentPayloadToV2 = (
+  content: ContentPayloadDto,
+  engagements: EngagementDocument[]
+) => {
+  const contentPayloadItem = {
+    id: content.id,
+    authorId: content.author.id,
+    message: (content.payload as ShortPayload)?.message,
+    type: content.type,
+    link: (content.payload as ShortPayload)?.link,
+    photo: (content.payload as ShortPayload)?.photo,
+    metrics: {
+      likeCount: content.liked.count,
+      commentCount: content.commented.count,
+      quoteCount: 0,
+      recastCount: content.recasted.count
+    },
+    participate: {
+      liked: engagements.find((item) => item.type === EngagementType.Like)
+        ? true
+        : false,
+      commented: engagements.find(
+        (item) => item.type === EngagementType.Comment
+      )
+        ? true
+        : false,
+      quoted: engagements.find((item) => item.type === EngagementType.Quote)
+        ? true
+        : false,
+      recasted: engagements.find((item) => item.type === EngagementType.Recast)
+        ? true
+        : false
+    },
+    createdAt: content.createdAt,
+    updatedAt: content.updatedAt
+  } as ContentPayloadItem;
+  if (content.isRecast || content.isQuote) {
+    contentPayloadItem.referencedCasts = {
+      type: content.isRecast ? 'recasted' : 'quoted',
+      id: content.originalPost._id as string
+    };
+  }
+  return contentPayloadItem;
+};
+
+export const toUnsignedContentPayloadItem = (
+  content: ContentDocument | Content,
+  engagements: EngagementDocument[] = []
+) => {
+  const result = {
+    id: String(content._id),
+    authorId: content.author.id,
+    type: content.type,
+    message: (content.payload as ShortPayload)?.message,
+    link: (content.payload as ShortPayload)?.link,
+    photo: (content.payload as ShortPayload)?.photo,
+
+    metrics: {
+      likeCount: content.engagements?.like?.count | 0,
+      commentCount: content.engagements?.comment?.count | 0,
+      quoteCount: content.engagements?.quote?.count | 0,
+      recastCount: content.engagements?.recast?.count | 0
+    },
+    participate: {
+      liked: engagements.some(({ type }) => type === EngagementType.Like),
+      commented: engagements.some(
+        ({ type }) => type === EngagementType.Comment
+      ),
+      quoted: engagements.some(({ type }) => type === EngagementType.Quote),
+      recasted: engagements.some(({ type }) => type === EngagementType.Recast),
+      reported: engagements.some(({ type }) => type === EngagementType.Report)
+    },
+
+    createdAt: content.createdAt.toISOString(),
+    updatedAt: content.updatedAt.toISOString()
+  } as ContentPayloadItem;
+  if (content.isRecast || content.isQuote) {
+    result.referencedCasts = {
+      type: content.isRecast ? 'recasted' : 'quoted',
+      id: content.originalPost._id as string
+    };
+  }
+  return result;
+};
+
+export const signedContentPayloadItem = (unsignedItem: ContentPayloadItem) => {
+  if (unsignedItem.photo?.contents)
+    unsignedItem.photo.contents = unsignedItem.photo.contents.map((item) =>
+      new Image(item).toSignUrls()
+    );
+
+  if (unsignedItem.photo?.cover)
+    unsignedItem.photo.cover = new Image(unsignedItem.photo.cover).toSignUrls();
+
+  if (unsignedItem.link)
+    unsignedItem.link = unsignedItem.link.map((item) => {
+      if (item.image) {
+        item.image = new Image(item.image as CastcleImage).toSignUrls();
+      } else return item;
+    });
+
+  return unsignedItem;
+};
+
+export const toSignedContentPayloadItem = (
+  content: ContentDocument | Content,
+  engagements: EngagementDocument[] = []
+) =>
+  signedContentPayloadItem(toUnsignedContentPayloadItem(content, engagements));
 
 export const ContentSchema = SchemaFactory.createForClass(Content);
 ContentSchema.index({ 'author.id': 1, 'author.castcleId': 1 });
@@ -222,8 +341,8 @@ export const ContentSchemaFactory = (
       id: (this as ContentDocument)._id,
       author: { ...(this as ContentDocument).author },
       payload: { ...(this as ContentDocument).payload },
-      createAt: (this as ContentDocument).createdAt.toISOString(),
-      updateAt: (this as ContentDocument).updatedAt.toISOString(),
+      createdAt: (this as ContentDocument).createdAt.toISOString(),
+      updatedAt: (this as ContentDocument).updatedAt.toISOString(),
       type: (this as ContentDocument).type,
       feature: {
         slug: 'feed',
@@ -248,6 +367,14 @@ export const ContentSchemaFactory = (
     return payload;
   };
 
+  ContentSchema.methods.toContentPayloadItem = function (
+    engagements: EngagementDocument[] = []
+  ) {
+    return signedContentPayloadItem(
+      toUnsignedContentPayloadItem(this as ContentDocument, engagements)
+    );
+  };
+
   ContentSchema.methods.toContentPayload = function (
     engagements: EngagementDocument[] = []
   ) {
@@ -256,8 +383,8 @@ export const ContentSchemaFactory = (
       id: (this as ContentDocument)._id,
       author: { ...(this as ContentDocument).author },
       payload: { ...(this as ContentDocument).payload },
-      createAt: (this as ContentDocument).createdAt.toISOString(),
-      updateAt: (this as ContentDocument).updatedAt.toISOString(),
+      createdAt: (this as ContentDocument).createdAt.toISOString(),
+      updatedAt: (this as ContentDocument).updatedAt.toISOString(),
       type: (this as ContentDocument).type,
       feature: {
         slug: 'feed',
