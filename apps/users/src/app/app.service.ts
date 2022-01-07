@@ -20,17 +20,35 @@
  * Thailand 10160, or visit www.castcle.com if you need additional information
  * or have any questions.
  */
-import { UpdateModelUserDto, UpdateUserDto } from '@castcle-api/database/dtos';
+import { AuthenticationService, ContentService } from '@castcle-api/database';
+import {
+  Author,
+  CastcleIncludes,
+  ContentResponse,
+  UpdateModelUserDto,
+  UpdateUserDto
+} from '@castcle-api/database/dtos';
+import {
+  ContentDocument,
+  EngagementDocument,
+  toSignedContentPayloadItem
+} from '@castcle-api/database/schemas';
 import { CastLogger, CastLoggerOptions } from '@castcle-api/logger';
 import {
   AVATAR_SIZE_CONFIGS,
   COMMON_SIZE_CONFIGS,
   Image
 } from '@castcle-api/utils/aws';
+import { CastcleException, CastcleStatus } from '@castcle-api/utils/exception';
 import { CredentialRequest } from '@castcle-api/utils/interceptors';
 import { Injectable } from '@nestjs/common';
+
 @Injectable()
 export class AppService {
+  constructor(
+    private authService: AuthenticationService,
+    private contentService: ContentService
+  ) {}
   private readonly logger = new CastLogger(AppService.name, CastLoggerOptions);
 
   getData(): { message: string } {
@@ -72,5 +90,63 @@ export class AppService {
     }
     updateModelUserDto = { ...body, images: updateModelUserDto.images };
     return updateModelUserDto;
+  }
+
+  /**
+   * return user document that has same castcleId but check if this request should have access to that user
+   * @param {CredentialRequest} credentialRequest
+   * @param {string} castcleId
+   * @returns {UserDocument}
+   */
+  async getUserFromBody(
+    credentialRequest: CredentialRequest,
+    castcleId: string
+  ) {
+    const account = await this.authService.getAccountFromCredential(
+      credentialRequest.$credential
+    );
+    const user = await this.authService.getUserFromCastcleId(castcleId);
+    if (String(user.ownerAccount) !== String(account._id)) {
+      throw new CastcleException(CastcleStatus.FORBIDDEN_REQUEST);
+    }
+    return user;
+  }
+
+  async getContentIfExist(id: string, req: CredentialRequest) {
+    try {
+      const content = await this.contentService.getContentFromId(id);
+      if (content) return content;
+      else
+        throw new CastcleException(
+          CastcleStatus.REQUEST_URL_NOT_FOUND,
+          req.$language
+        );
+    } catch (e) {
+      throw new CastcleException(
+        CastcleStatus.REQUEST_URL_NOT_FOUND,
+        req.$language
+      );
+    }
+  }
+
+  /**
+   *
+   * @param content
+   * @param engagements
+   * @returns {ContentResponse}
+   */
+  convertContentToContentResponse(
+    content: ContentDocument,
+    engagements: EngagementDocument[] = []
+  ): ContentResponse {
+    const users = [new Author(content.author).toIncludeUser()];
+    const casts = content.originalPost
+      ? [toSignedContentPayloadItem(content.originalPost)]
+      : [];
+
+    return {
+      payload: content.toContentPayloadItem(engagements),
+      includes: new CastcleIncludes({ users, casts })
+    };
   }
 }

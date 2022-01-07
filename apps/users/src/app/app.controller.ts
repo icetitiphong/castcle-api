@@ -29,6 +29,7 @@ import {
   UserService
 } from '@castcle-api/database';
 import {
+  ContentResponse,
   ContentsResponse,
   DEFAULT_CONTENT_QUERY_OPTIONS,
   DEFAULT_QUERY_OPTIONS,
@@ -982,5 +983,28 @@ export class UserController {
     }
     const meta = createCastcleMeta(userReferrer.items, userReferrer.total);
     return { payload: response, meta: meta };
+  }
+
+  @CastcleBasicAuth()
+  @ApiResponse({
+    status: 201,
+    type: ContentResponse
+  })
+  @Post(':id/recasted')
+  async recastContent(
+    @Param('id') id: string,
+    @Body('contentId') contentId: string,
+    @Req() req: CredentialRequest
+  ) {
+    const content = await this.appService.getContentIfExist(contentId, req);
+    const user = await this.appService.getUserFromBody(req, id);
+    const result = await this.contentService.recastContentFromUser(
+      content,
+      user
+    );
+
+    return this.appService.convertContentToContentResponse(
+      result.recastContent
+    );
   }
 }
