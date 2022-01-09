@@ -1007,4 +1007,27 @@ export class UserController {
       result.recastContent
     );
   }
+
+  @ApiResponse({
+    status: 201,
+    type: ContentResponse
+  })
+  @CastcleBasicAuth()
+  @Post(':id/quotecast')
+  async quoteContent(
+    @Param('id') id: string,
+    @Body('castcleId') contentId: string,
+    @Body('message') message: string,
+    @Req() req: CredentialRequest
+  ) {
+    const content = await this.appService.getContentIfExist(contentId, req);
+
+    const user = await this.appService.getUserFromBody(req, id);
+    const result = await this.contentService.quoteContentFromUser(
+      content,
+      user,
+      message
+    );
+    return this.appService.convertContentToContentResponse(result.quoteContent);
+  }
 }
