@@ -787,6 +787,43 @@ describe('ContentService', () => {
     });
   });
 
+  describe('#convertContentsToContentsResponse', () => {
+    let contents: ContentDocument[];
+
+    beforeAll(async () => {
+      const contentDto = {
+        type: 'short',
+        payload: { message: 'message' }
+      } as SaveContentDto;
+
+      contents = await service.createContentsFromAuthor(author, [contentDto]);
+    });
+
+    it('should return ContentsResponse if requester is member', async () => {
+      const contentsResponse = await service.convertContentsToContentsResponse(
+        user,
+        contents,
+        true
+      );
+
+      expect(contentsResponse.includes.users.length).toEqual(1);
+      expect(contentsResponse.payload.length).toEqual(1);
+      expect(contentsResponse.meta.resultCount).toEqual(1);
+    });
+
+    it('should return ContentsResponse if requester is guest (null)', async () => {
+      const contentsResponse = await service.convertContentsToContentsResponse(
+        null,
+        contents,
+        true
+      );
+
+      expect(contentsResponse.includes.users.length).toEqual(1);
+      expect(contentsResponse.payload.length).toEqual(1);
+      expect(contentsResponse.meta.resultCount).toEqual(1);
+    });
+  });
+
   describe('#deleteContentFromOriginalAndAuthor()', () => {
     let contentA: ContentDocument;
     let mockUsers: MockUserDetail[] = [];
