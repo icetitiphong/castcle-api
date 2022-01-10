@@ -21,30 +21,31 @@
  * or have any questions.
  */
 
-import { Test, TestingModule } from '@nestjs/testing';
-import { MongooseModule, MongooseModuleOptions } from '@nestjs/mongoose';
-import { AuthenticationService } from './authentication.service';
-import { UserService } from './user.service';
-import { ContentService } from './content.service';
-import { env } from '../environment';
-import { AccountDocument } from '../schemas/account.schema';
-import { CredentialDocument } from '../schemas/credential.schema';
-import {
-  MongooseForFeatures,
-  MongooseAsyncFeatures,
-  CommentService
-} from '../database.module';
-import { MongoMemoryServer } from 'mongodb-memory-server';
-import { ContentDocument } from '../schemas/content.schema';
-import { ContentType, EntityVisibility, SortDirection } from '../dtos';
-import { CommentDocument, UserDocument } from '../schemas';
-import { Author, SaveContentDto, ShortPayload } from '../dtos/content.dto';
-import { EngagementDocument } from '../schemas/engagement.schema';
-import { BullModule } from '@nestjs/bull';
 import { TopicName, UserProducer } from '@castcle-api/utils/queue';
+import { BullModule } from '@nestjs/bull';
+import { MongooseModule, MongooseModuleOptions } from '@nestjs/mongoose';
+import { Test, TestingModule } from '@nestjs/testing';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import {
+  CommentService,
+  MongooseAsyncFeatures,
+  MongooseForFeatures
+} from '../database.module';
+import { ContentType, EntityVisibility, SortDirection } from '../dtos';
+import { Author, SaveContentDto, ShortPayload } from '../dtos/content.dto';
+import { env } from '../environment';
+import { generateMockUsers, MockUserDetail } from '../mocks/user.mocks';
 import { UserVerified } from '../models';
+import { CommentDocument, UserDocument } from '../schemas';
+import { AccountDocument } from '../schemas/account.schema';
+import { ContentDocument } from '../schemas/content.schema';
+import { CredentialDocument } from '../schemas/credential.schema';
+import { EngagementDocument } from '../schemas/engagement.schema';
 import { FeedItemDocument } from '../schemas/feedItem.schema';
+import { AuthenticationService } from './authentication.service';
+import { ContentService } from './content.service';
 import { HashtagService } from './hashtag.service';
+import { UserService } from './user.service';
 
 jest.mock('@castcle-api/logger');
 jest.mock('link-preview-js', () => ({
@@ -783,6 +784,40 @@ describe('ContentService', () => {
       expect((service as any).logger.log).toBeCalled();
       expect((service as any).transporter.sendMail).toBeCalled();
       expect(reportedItem.participate.reported).toBeTruthy();
+    });
+  });
+
+  describe('#deleteContentFromOriginalAndAuthor()', () => {
+    let contentA: ContentDocument;
+    let mockUsers: MockUserDetail[] = [];
+    beforeAll(async () => {
+      mockUsers = await generateMockUsers(2, 0, {
+        userService: userService,
+        accountService: authService
+      });
+
+      //userA create a content
+      contentA = await service.createContentFromUser(mockUsers[0].user, {
+        payload: {
+          message: 'hello world'
+        } as ShortPayload,
+        type: ContentType.Short,
+        castcleId: user.displayId
+      });
+    });
+
+    it('should set delete content successful', async () => {
+      const resultB = await service.recastContentFromUser(
+        contentA,
+        mockUsers[1].user
+      );
+      const contentB = resultB.recastContent;
+      await service.deleteContentFromOriginalAndAuthor(
+        contentA.id,
+        mockUsers[1].user.id
+      );
+      const postDelete = await service.getContentFromId(contentB.id);
+      expect(postDelete).toBeNull();
     });
   });
 });
