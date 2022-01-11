@@ -248,9 +248,10 @@ export class ContentService {
   };
 
   /**
-   * Set content visibility to deleted
-   * @param {string} id
-   * @returns {ContentDocument}
+   * Delete Content from orginal post and author
+   * @param {string} originalPostId
+   * @param {string} authorId
+   * @returns {null}
    */
   deleteContentFromOriginalAndAuthor = async (
     originalPostId: string,
@@ -1166,4 +1167,17 @@ Message: ${message}`
       meta
     };
   }
+
+  /**
+   * Get Content from orginal post
+   * @param {string} originalPostId
+   * @returns {ContentDocument[]}
+   */
+  getContentFromOriginalPost = async (originalPostId: string) => {
+    return await this._contentModel
+      .find({
+        'originalPost._id': mongoose.Types.ObjectId(originalPostId)
+      })
+      .exec();
+  };
 }
