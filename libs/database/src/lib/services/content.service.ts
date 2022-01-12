@@ -20,7 +20,6 @@
  * Thailand 10160, or visit www.castcle.com if you need additional information
  * or have any questions.
  */
-import { Author } from '@castcle-api/database/dtos';
 import { Environment } from '@castcle-api/environments';
 import { CastLogger } from '@castcle-api/logger';
 import { CastcleException } from '@castcle-api/utils/exception';
@@ -32,6 +31,7 @@ import { FilterQuery, Model, Types } from 'mongoose';
 import { createTransport } from 'nodemailer';
 import { ContentAggregator } from '../aggregator/content.aggregator';
 import {
+  Author,
   CastcleContentQueryOptions,
   CastcleIncludes,
   CommentDto,
