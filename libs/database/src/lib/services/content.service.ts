@@ -20,6 +20,7 @@
  * Thailand 10160, or visit www.castcle.com if you need additional information
  * or have any questions.
  */
+import { Author } from '@castcle-api/database/dtos';
 import { Environment } from '@castcle-api/environments';
 import { CastLogger } from '@castcle-api/logger';
 import { CastcleException } from '@castcle-api/utils/exception';
@@ -31,7 +32,6 @@ import { FilterQuery, Model, Types } from 'mongoose';
 import { createTransport } from 'nodemailer';
 import { ContentAggregator } from '../aggregator/content.aggregator';
 import {
-  Author,
   CastcleContentQueryOptions,
   CastcleIncludes,
   CommentDto,
@@ -1171,13 +1171,47 @@ Message: ${message}`
   /**
    * Get Content from orginal post
    * @param {string} originalPostId
-   * @returns {ContentDocument[]}
+   * @param {number} maxResults
+   * @param {string} sinceId
+   * @param {string} untilId
+   * @returns {ContentDocument[], totalDocument}
    */
-  getContentFromOriginalPost = async (originalPostId: string) => {
-    return await this._contentModel
-      .find({
-        'originalPost._id': mongoose.Types.ObjectId(originalPostId)
-      })
+  getContentFromOriginalPost = async (
+    originalPostId: string,
+    maxResults: number,
+    sinceId?: string,
+    untilId?: string
+  ) => {
+    let filter: FilterQuery<ContentDocument> = {
+      'originalPost._id': mongoose.Types.ObjectId(originalPostId)
+    };
+    const totalDocument = await this._contentModel
+      .countDocuments(filter)
       .exec();
+    if (sinceId) {
+      filter = {
+        ...filter,
+        'author.id': {
+          $gt: mongoose.Types.ObjectId(sinceId)
+        }
+      };
+    } else if (untilId) {
+      filter = {
+        ...filter,
+        'author.id': {
+          $lt: mongoose.Types.ObjectId(untilId)
+        }
+      };
+    }
+    const result = await this._contentModel
+      .find(filter)
+      .limit(maxResults)
+      .sort({ createdAt: -1 })
+      .exec();
+
+    return {
+      total: totalDocument,
+      items: result
+    };
   };
 }

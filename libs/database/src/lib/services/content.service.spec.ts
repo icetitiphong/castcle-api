@@ -824,7 +824,7 @@ describe('ContentService', () => {
     });
   });
 
-  describe('#deleteContentFromOriginalAndAuthor()', () => {
+  describe('#deleteContentFromOriginalAndAuthor', () => {
     let contentA: ContentDocument;
     let mockUsers: MockUserDetail[] = [];
     beforeAll(async () => {
@@ -855,6 +855,92 @@ describe('ContentService', () => {
       );
       const postDelete = await service.getContentFromId(contentB.id);
       expect(postDelete).toBeNull();
+    });
+  });
+
+  describe('#getContentFromOriginalPost', () => {
+    let contentA: ContentDocument;
+    let mockUsers: MockUserDetail[] = [];
+    beforeAll(async () => {
+      mockUsers = await generateMockUsers(5, 0, {
+        userService: userService,
+        accountService: authService
+      });
+
+      //userA create a content
+      contentA = await service.createContentFromUser(mockUsers[0].user, {
+        payload: {
+          message: 'hello world'
+        } as ShortPayload,
+        type: ContentType.Short,
+        castcleId: user.displayId
+      });
+
+      await service.recastContentFromUser(contentA, mockUsers[1].user);
+      await service.recastContentFromUser(contentA, mockUsers[2].user);
+      await service.recastContentFromUser(contentA, mockUsers[3].user);
+      await service.recastContentFromUser(contentA, mockUsers[4].user);
+    });
+
+    it('should get all recast content', async () => {
+      const result = await service.getContentFromOriginalPost(contentA.id, 100);
+      expect(result.items).toBeDefined();
+      expect(result.items.length).toEqual(4);
+      expect(result.total).toEqual(4);
+    });
+
+    it('should get recast content with untilId', async () => {
+      const allRecast = await service.getContentFromOriginalPost(
+        contentA.id,
+        100
+      );
+      const result = await service.getContentFromOriginalPost(
+        contentA.id,
+        100,
+        null,
+        allRecast.items[1].author.id
+      );
+
+      const foundData = result.items.find(
+        (x) =>
+          x.author.id.toString() === allRecast.items[2].author.id.toString()
+      );
+      const findMissing = result.items.find(
+        (x) =>
+          x.author.id.toString() === allRecast.items[0].author.id.toString()
+      );
+      expect(result.items).toBeDefined();
+      expect(result.items.length).toEqual(2);
+      expect(result.total).toEqual(4);
+      expect(foundData).toBeDefined();
+      expect(findMissing).toBeUndefined();
+    });
+
+    it('should get recast content with sinceId', async () => {
+      const allRecast = await service.getContentFromOriginalPost(
+        contentA.id,
+        100
+      );
+      const result = await service.getContentFromOriginalPost(
+        contentA.id,
+        100,
+        allRecast.items[2].author.id,
+        null
+      );
+
+      const findMissing = result.items.find(
+        (x) =>
+          x.author.id.toString() === allRecast.items[2].author.id.toString()
+      );
+      const foundData = result.items.find(
+        (x) =>
+          x.author.id.toString() === allRecast.items[0].author.id.toString()
+      );
+      expect(result.items).toBeDefined();
+      expect(result.items.length).toEqual(2);
+      expect(result.total).toEqual(4);
+      expect(foundData).toBeDefined();
+      expect(findMissing).toBeUndefined();
     });
   });
 });
