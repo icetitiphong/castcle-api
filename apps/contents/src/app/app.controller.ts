@@ -72,7 +72,7 @@ import {
 import { ApiBody, ApiOkResponse, ApiResponse } from '@nestjs/swagger';
 import { ContentLikeBody } from '../dtos/content.dto';
 import { AppService } from './app.service';
-import { ReportContentDto, UserRecastedResponse } from './dtos';
+import { UserRecastedResponse } from './dtos';
 import { SaveContentPipe } from './pipes/save-content.pipe';
 
 @CastcleController('1.0')
@@ -379,22 +379,6 @@ export class ContentController {
     return {
       payload: result.quoteContent.toContentPayloadItem()
     } as ContentResponse;
-  }
-
-  @UsePipes(new ValidationPipe({ skipMissingProperties: true }))
-  @ApiResponse({ status: HttpStatus.NO_CONTENT })
-  @Post(':id/reporting')
-  @CastcleBasicAuth()
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async reportContent(
-    @Body() { message }: ReportContentDto,
-    @Param('id') reportingContentId: string,
-    @Req() req: CredentialRequest
-  ) {
-    const content = await this._getContentIfExist(reportingContentId, req);
-    const user = await this.userService.getUserFromCredential(req.$credential);
-
-    await this.contentService.reportContent(user, content, message);
   }
 
   @ApiOkResponse({ type: UserRecastedResponse })
