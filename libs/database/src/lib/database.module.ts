@@ -36,6 +36,7 @@ import { CountrySchema } from './schemas/country.schema';
 import { CredentialSchemaFactory } from './schemas/credential.schema';
 import { DsContentReachSchema } from './schemas/ds-content-reach.schema';
 import { EngagementSchemaFactory } from './schemas/engagement.schema';
+import { FeatureSchema } from './schemas/feature.schema';
 import { FeedItemSchemaFactory } from './schemas/feedItem.schema';
 import { GuestFeedItemSchema } from './schemas/guestFeedItems.schema';
 import { HashtagSchema } from './schemas/hashtag.schema';
@@ -51,6 +52,7 @@ import { AuthenticationService } from './services/authentication.service';
 import { CommentService } from './services/comment.service';
 import { ContentService } from './services/content.service';
 import { CountryService } from './services/country.service';
+import { FeatureService } from './services/feature.service';
 import { HashtagService } from './services/hashtag.service';
 import { LanguageService } from './services/language.service';
 import { NotificationService } from './services/notification.service';
@@ -68,6 +70,7 @@ export const MongooseForFeatures = MongooseModule.forFeature([
   { name: 'Notification', schema: NotificationSchema },
   { name: 'Language', schema: LanguageSchema },
   { name: 'Hashtag', schema: HashtagSchema },
+  { name: 'Feature', schema: FeatureSchema },
   { name: 'AccountAuthenId', schema: AccountAuthenIdSchema },
   { name: 'Country', schema: CountrySchema },
   { name: 'GuestFeedItem', schema: GuestFeedItemSchema },
@@ -138,6 +141,7 @@ export const MongooseAsyncFeatures = MongooseModule.forFeatureAsync([
     NotificationProducer,
     LanguageService,
     HashtagService,
+    FeatureService,
     SearchService,
     CountryService,
     SocialSyncService,
@@ -152,6 +156,7 @@ export const MongooseAsyncFeatures = MongooseModule.forFeatureAsync([
     RankerService,
     LanguageService,
     HashtagService,
+    FeatureService,
     SearchService,
     CountryService,
     SocialSyncService,
@@ -169,6 +174,7 @@ export {
   RankerService,
   LanguageService,
   HashtagService,
+  FeatureService,
   SearchService,
   CountryService,
   createCastcleMeta,

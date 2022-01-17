@@ -29,6 +29,7 @@ export * from './feed.dto';
 export * from './feedItem.dto';
 export * from './guest-feed-item.dto';
 export * from './hashtag.dto';
+export * from './feature.dto';
 export * from './language.dto';
 export * from './link-preview.dto';
 export * from './notification.dto';

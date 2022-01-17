@@ -30,6 +30,7 @@ import { CountryController } from './controllers/country/country.controller';
 import { HashtagsController } from './controllers/hashtags/hashtags.controller';
 import { HealthyController } from './controllers/healthy/healthy.controller';
 import { LanguagesController } from './controllers/languages/languages.controller';
+import { FeaturesController } from './controllers/features/features.controller';
 
 @Module({
   imports: [DatabaseModule, UtilsInterceptorsModule, UtilsCacheModule],
@@ -38,7 +39,8 @@ import { LanguagesController } from './controllers/languages/languages.controlle
     HealthyController,
     LanguagesController,
     HashtagsController,
-    CountryController
+    CountryController,
+    FeaturesController
   ],
   providers: [AppService]
 })
