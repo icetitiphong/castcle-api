@@ -3,3 +3,4 @@
 
 npm run lint:all
 npm run test:all
+integrate getAll features and unit testing
