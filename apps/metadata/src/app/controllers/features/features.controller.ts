@@ -49,8 +49,8 @@ export class FeaturesController {
     type: FeatureResponse
   })
   @UseInterceptors(HttpCacheSharedInterceptor)
-  @CacheKey(CacheKeyName.HashtagsGet.Name)
-  @CacheTTL(CacheKeyName.HashtagsGet.Ttl)
+  @CacheKey(CacheKeyName.FeaturesGet.Name)
+  @CacheTTL(CacheKeyName.FeaturesGet.Ttl)
   @UseInterceptors(CredentialInterceptor)
   @Get('features')
   async getAllFeature(@Req() req: CredentialRequest): Promise<FeatureResponse> {
